@@ -294,9 +294,8 @@ Object.keys(PAIR_RULES).forEach(k => {
 /* ========== 4. 渲染UI ========== */
 const LAYOUT = [
   { cols:6, keys:['鼠','牛','虎','兔','龍','蛇','馬','羊','猴','雞','狗','豬'] },
-  { cols:6, keys:['單','雙','__','__','大','小'] },
+  { cols:2, keys:['家禽(牛馬羊雞狗豬)', '野獸(兔虎鼠猴蛇龍)'] }, // 【修改点】替换到这里
   { cols:6, keys:['合單','大單','小單','合大','尾大','__','合雙','大雙','小雙','合小','尾小'] },
-  { cols:2, keys:['家禽(牛馬羊雞狗豬)', '野獸(兔虎鼠猴蛇龍)'] },
   { cols:6, keys:['金','木','水','火','土'] },
   { cols:6, keys:Object.keys(PAIR_RULES).filter(k=>k.endsWith('合')) },
   { cols:6, keys:Object.keys(PAIR_RULES).filter(k=>k.endsWith('冲')) },
@@ -424,7 +423,7 @@ document.getElementById('btnCopy').addEventListener('click', () => {
     flatNums.push(...g.nums.map(x => x.n));
   });
 
-  // 【修改点】使用中文逗号“，”分隔
+  // 使用中文逗号“，”分隔
   const text = flatNums.map(n => String(n).padStart(2, '0')).join('，');
   const done = () => {
     const btn = document.getElementById('btnCopy');
