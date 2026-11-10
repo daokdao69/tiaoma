@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>挑碼助手</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #f5f5f5; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 14px; color: #333;
+  }
+  
+  /* 核心布局：使用 fixed 锁定全屏，解决手机端高度计算问题 */
+  #app {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    background: #f5f5f5;
+  }
+
+  /* 顶部固定区域 */
+  .top-section {
+    flex: 0 0 auto;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    max-height: 50vh; /* 最多占屏幕一半高度 */
+  }
+
+  .result-box {
+    padding: 12px 12px 5px;
+    overflow-y: auto;
+    flex: 1;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .title {
+    font-size: 14px; font-weight: 700; color: #1db475;
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px;
+  }
+  .title small { font-weight: 400; color: #999; font-size: 12px; }
+
+  /* 号码球容器：一行两个生肖组 */
+  .result-balls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-start;
+    min-height: 40px;
+  }
+
+  /* 单个生肖组块 */
+  .zodiac-item {
+    width: calc(50% - 4px); /* 恰好占据一半，一行两个 */
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 4px 0;
+    box-sizing: border-box;
+  }
+
+  /* 生肖文字标签 */
+  .zodiac-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #555;
+    width: 22px;
+    flex-shrink: 0;
+    text-align: center;
+    line-height: 28px;
+  }
+
+  .zodiac-balls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    flex: 1;
+  }
+
+  /* 仿图片的号码球样式 */
+  .ball {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #fff; border: 2.5px solid #ccc;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 12px; color: #111;
+    position: relative;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  }
+  
+  /* 右下角高光反光点 */
+  .ball::after {
+    content: ''; position: absolute;
+    bottom: 1px; right: 2px;
+    width: 5px; height: 3px;
+    background: rgba(255,255,255,0.95);
+    border-radius: 3px;
+    transform: rotate(-45deg);
+  }
+  
+  /* 波色边框 */
+  .ball.red { border-color: #ff3b30; }
+  .ball.blue { border-color: #007aff; }
+  .ball.green { border-color: #34c759; }
+
+  .empty-tip { color: #aaa; font-size: 12px; text-align: center; padding: 10px 0; width: 100%; }
+
+  /* 底部操作按钮 */
+  .action-area { display: flex; gap: 10px; padding: 8px 12px; background: #fafafa; border-top: 1px solid #eee; }
+  .btn {
+    flex: 1; padding: 10px; border-radius: 6px; text-align: center;
+    font-weight: 700; font-size: 14px; cursor: pointer; border: none; outline: none;
+  }
+  .btn.clear { background: #e0e0e0; color: #555; }
+  .btn.copy { background: #1db475; color: #fff; }
+  .btn:active { opacity: 0.8; }
+
+  /* 底部滚动区域 (挑码区) */
+  .bottom-section {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px 8px 30px 8px;
+  }
+
+  /* 缩小的挑码按钮 */
+  .rule-group {
+    display: grid; gap: 4px; margin-bottom: 6px;
+  }
+  .rule-group.c2 { grid-template-columns: repeat(2, 1fr); }
+  .rule-group.c6 { grid-template-columns: repeat(6, 1fr); }
+  
+  .item {
+    border: 1px solid #d0d0d0; border-radius: 4px;
+    padding: 6px 2px; text-align: center; font-size: 12px;
+    background: #fff; cursor: pointer; user-select: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: all 0.1s;
+  }
+  /* 针对长文本（家禽野兽）稍微缩小字体 */
+  .item.long-text { font-size: 11px; }
+  
+  .item.on { background: #1db475; border-color: #1db475; color: #fff; font-weight: 700; }
+  .item.ghost { border: none; pointer-events: none; background: transparent; }
+  .item:active { transform: scale(0.95); }
+  
+  .hline { height: 1px; background: #eee; margin: 6px 0; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- 顶部固定区 -->
+  <div class="top-section">
+    <div class="result-box">
+      <div class="title">
+        <span>挑碼結果</span>
+        <small id="count">共 0 個</small>
+      </div>
+      <div id="result" class="result-balls">
+        <div class="empty-tip">請在下方選擇條件</div>
+      </div>
+    </div>
+    <div class="action-area">
+      <button class="btn clear" id="btnClear">清空</button>
+      <button class="btn copy" id="btnCopy">復製</button>
+    </div>
+  </div>
+
+  <!-- 底部滚动区 (挑码区) -->
+  <div class="bottom-section">
+    <div id="rules"></div>
+  </div>
+</div>
+
+<script>
+/* ========== 1. 基础数据 ========== */
+const ZODIACS = ['鼠','牛','虎','兔','龍','蛇','馬','羊','猴','雞','狗','豬'];
+
+const RED   = [1,2,7,8,12,13,18,19,23,24,29,30,34,35,40,45,46];
+const BLUE  = [3,4,9,10,14,15,20,25,26,31,36,37,41,42,47,48];
+const GREEN = [5,6,11,16,17,21,22,27,28,32,33,38,39,43,44,49];
+
+const COLOR = {};
+RED.forEach(n=>COLOR[n]='red');
+BLUE.forEach(n=>COLOR[n]='blue');
+GREEN.forEach(n=>COLOR[n]='green');
+
+const WUXING = {
+  '金': [4, 5, 12, 13, 26, 27, 34, 35, 42, 43],
+  '木': [8, 9, 16, 17, 24, 25, 38, 39, 46, 47],
+  '水': [1, 14, 15, 22, 23, 30, 31, 44, 45],
+  '火': [2, 3, 10, 11, 18, 19, 32, 33, 40, 41, 48, 49],
+  '土': [6, 7, 20, 21, 28, 29, 36, 37]
+};
+
+const LIUHE    = [['鼠','牛'],['虎','豬'],['兔','狗'],['龍','雞'],['蛇','猴'],['馬','羊']];
+const LIUCHONG = [['鼠','馬'],['牛','羊'],['虎','猴'],['兔','雞'],['龍','狗'],['蛇','豬']];
+const JIAQIN   = ['牛','馬','羊','雞','狗','豬'];
+
+/* ========== 2. 农历年生肖 ========== */
+const YEAR_ZODIAC = { 2023:3, 2024:4, 2025:5, 2026:6, 2027:7, 2028:8, 2029:9, 2030:10 };
+const SPRING_FESTIVAL = { 2023:'2023-01-22', 2024:'2024-02-10', 2025:'2025-01-29', 2026:'2026-02-17', 2027:'2027-02-06', 2028:'2028-01-26', 2029:'2029-02-13', 2030:'2030-02-03' };
+
+function getLunarYear(d = new Date()) {
+  const y = d.getFullYear();
+  const sf = SPRING_FESTIVAL[y];
+  if (sf && d < new Date(sf)) return y - 1;
+  return y;
+}
+const lunarYear = getLunarYear();
+const yearZodiacIdx = YEAR_ZODIAC[lunarYear] ?? ((lunarYear - 4) % 12 + 12) % 12;
+
+function zodiacOf(n) {
+  const offset = (n - 1) % 12;
+  return ZODIACS[(yearZodiacIdx - offset + 12) % 12];
+}
+
+function buildNumbers() {
+  const list = [];
+  for (let n = 1; n <= 49; n++) {
+    const sum = Math.floor(n / 10) + (n % 10);
+    list.push({
+      n, zodiac: zodiacOf(n), color: COLOR[n],
+      odd: n % 2 === 1, big: n >= 25,
+      sum, sumOdd: sum % 2 === 1, sumBig: sum >= 7,
+      tail: n % 10, head: Math.floor(n / 10), tailBig: (n % 10) >= 5
+    });
+  }
+  return list;
+}
+const NUMBERS = buildNumbers();
+
+/* ========== 3. 规则及分组定义 ========== */
+const byZodiac  = z => x => x.zodiac === z;
+const byColor   = c => x => x.color === c;
+const byWuxing  = w => x => WUXING[w].includes(x.n);
+const byPair    = (pair, arr) => x => pair.includes(x.zodiac) && arr.includes(x.zodiac);
+
+const RULES = {
+  '鼠':byZodiac('鼠'),'牛':byZodiac('牛'),'虎':byZodiac('虎'),'兔':byZodiac('兔'),
+  '龍':byZodiac('龍'),'蛇':byZodiac('蛇'),'馬':byZodiac('馬'),'羊':byZodiac('羊'),
+  '猴':byZodiac('猴'),'雞':byZodiac('雞'),'狗':byZodiac('狗'),'豬':byZodiac('豬'),
+  '單':x=>x.odd, '雙':x=>!x.odd, '大':x=>x.big, '小':x=>!x.big,
+  '合單':x=>x.sumOdd, '合雙':x=>!x.sumOdd,
+  '大單':x=>x.big&&x.odd, '小單':x=>!x.big&&x.odd,
+  '大雙':x=>x.big&&!x.odd, '小雙':x=>!x.big&&!x.odd,
+  '合大':x=>x.sumBig, '合小':x=>!x.sumBig,
+  '尾大':x=>x.tailBig, '尾小':x=>!x.tailBig,
+  '家禽(牛馬羊雞狗豬)':x=>JIAQIN.includes(x.zodiac), 
+  '野獸(兔虎鼠猴蛇龍)':x=>!JIAQIN.includes(x.zodiac),
+  '金':byWuxing('金'), '木':byWuxing('木'), '水':byWuxing('水'), '火':byWuxing('火'), '土':byWuxing('土'),
+  '紅波':byColor('red'), '藍波':byColor('blue'), '綠波':byColor('green'),
+  '紅單':x=>x.color==='red'&&x.odd, '紅雙':x=>x.color==='red'&&!x.odd,
+  '藍單':x=>x.color==='blue'&&x.odd, '藍雙':x=>x.color==='blue'&&!x.odd,
+  '綠單':x=>x.color==='green'&&x.odd, '綠雙':x=>x.color==='green'&&!x.odd,
+  '0頭':x=>x.head===0,'1頭':x=>x.head===1,'2頭':x=>x.head===2,'3頭':x=>x.head===3,'4頭':x=>x.head===4,
+  '0尾':x=>x.tail===0,'1尾':x=>x.tail===1,'2尾':x=>x.tail===2,'3尾':x=>x.tail===3,'4尾':x=>x.tail===4,
+  '5尾':x=>x.tail===5,'6尾':x=>x.tail===6,'7尾':x=>x.tail===7,'8尾':x=>x.tail===8,'9尾':x=>x.tail===9
+};
+
+const PAIR_RULES = {};
+LIUHE.forEach(p => PAIR_RULES[p.join('')+'合'] = byPair(p, p));
+LIUCHONG.forEach(p => PAIR_RULES[p.join('')+'冲'] = byPair(p, p));
+
+const RULE_GROUPS = {
+  '鼠':'zodiac','牛':'zodiac','虎':'zodiac','兔':'zodiac','龍':'zodiac','蛇':'zodiac',
+  '馬':'zodiac','羊':'zodiac','猴':'zodiac','雞':'zodiac','狗':'zodiac','豬':'zodiac',
+  '單':'parity','雙':'parity',
+  '大':'size','小':'size',
+  '合單':'sum_parity','合雙':'sum_parity',
+  '大單':'combo','小單':'combo','大雙':'combo','小雙':'combo',
+  '合大':'sum_size','合小':'sum_size',
+  '尾大':'tail_size','尾小':'tail_size',
+  '家禽(牛馬羊雞狗豬)':'animal_type','野獸(兔虎鼠猴蛇龍)':'animal_type',
+  '金':'wuxing','木':'wuxing','水':'wuxing','火':'wuxing','土':'wuxing',
+  '紅波':'color','藍波':'color','綠波':'color',
+  '紅單':'color_parity','紅雙':'color_parity','藍單':'color_parity','藍雙':'color_parity','綠單':'color_parity','綠雙':'color_parity',
+  '0頭':'head','1頭':'head','2頭':'head','3頭':'head','4頭':'head',
+  '0尾':'tail','1尾':'tail','2尾':'tail','3尾':'tail','4尾':'tail',
+  '5尾':'tail','6尾':'tail','7尾':'tail','8尾':'tail','9尾':'tail'
+};
+
+Object.keys(PAIR_RULES).forEach(k => {
+  RULE_GROUPS[k] = k.endsWith('合') ? 'liuhe' : 'liuchong';
+});
+
+/* ========== 4. 渲染UI ========== */
+const LAYOUT = [
+  { cols:6, keys:['鼠','牛','虎','兔','龍','蛇','馬','羊','猴','雞','狗','豬'] },
+  { cols:6, keys:['單','雙','__','__','大','小'] },
+  { cols:6, keys:['合單','大單','小單','合大','尾大','__','合雙','大雙','小雙','合小','尾小'] },
+  { cols:2, keys:['家禽(牛馬羊雞狗豬)', '野獸(兔虎鼠猴蛇龍)'] },
+  { cols:6, keys:['金','木','水','火','土'] },
+  { cols:6, keys:Object.keys(PAIR_RULES).filter(k=>k.endsWith('合')) },
+  { cols:6, keys:Object.keys(PAIR_RULES).filter(k=>k.endsWith('冲')) },
+  { cols:6, keys:['紅波','藍波','綠波'] },
+  { cols:6, keys:['紅單','紅雙','藍單','藍雙','綠單','綠雙'] },
+  { cols:6, keys:['0頭','1頭','2頭','3頭','4頭'] },
+  { cols:6, keys:['0尾','1尾','2尾','3尾','4尾','5尾','6尾','7尾','8尾','9尾'] }
+];
+
+const rulesEl = document.getElementById('rules');
+LAYOUT.forEach(group => {
+  const div = document.createElement('div');
+  div.className = 'rule-group ' + (group.cols === 2 ? 'c2' : 'c6');
+  group.keys.forEach(key => {
+    const el = document.createElement('div');
+    if (key === '__') {
+      el.className = 'item ghost';
+    } else {
+      el.className = 'item' + (key.includes('(') ? ' long-text' : '');
+      el.textContent = key;
+      el.dataset.key = key;
+      el.addEventListener('click', () => toggleRule(key, el));
+    }
+    div.appendChild(el);
+  });
+  const line = document.createElement('div');
+  line.className = 'hline';
+  rulesEl.appendChild(div);
+  rulesEl.appendChild(line);
+});
+
+/* ========== 5. 选中与计算逻辑 ========== */
+const selected = new Set();
+
+function toggleRule(key, el) {
+  if (selected.has(key)) { selected.delete(key); el.classList.remove('on'); }
+  else { selected.add(key); el.classList.add('on'); }
+  render();
+}
+
+function getPredicate(key) {
+  return RULES[key] || PAIR_RULES[key];
+}
+
+function getOrderedResult() {
+  if (selected.size === 0) return [];
+  
+  const groups = {};
+  selected.forEach(key => {
+    const gid = RULE_GROUPS[key] || 'other';
+    if (!groups[gid]) groups[gid] = [];
+    groups[gid].push(getPredicate(key));
+  });
+
+  const result = NUMBERS.filter(x => {
+    for (let gid in groups) {
+      if (!groups[gid].some(p => p(x))) return false; 
+    }
+    return true;
+  });
+
+  const orderedGroups = [];
+  ZODIACS.forEach(zodiac => {
+    const zodiacNums = result.filter(x => x.zodiac === zodiac).sort((a,b) => a.n - b.n);
+    if (zodiacNums.length > 0) {
+      orderedGroups.push({
+        zodiac: zodiac,
+        nums: zodiacNums
+      });
+    }
+  });
+  return orderedGroups;
+}
+
+/* ========== 6. 渲染结果 ========== */
+function render() {
+  const resEl = document.getElementById('result');
+  const cntEl = document.getElementById('count');
+  
+  if (selected.size === 0) {
+    resEl.innerHTML = '<div class="empty-tip">請在下方選擇條件</div>';
+    cntEl.textContent = '共 0 個';
+    return;
+  }
+
+  const orderedGroups = getOrderedResult();
+  const totalCount = orderedGroups.reduce((acc, g) => acc + g.nums.length, 0);
+
+  cntEl.textContent = `共 ${totalCount} 個`;
+
+  if (totalCount === 0) {
+    resEl.innerHTML = '<div class="empty-tip">沒有符合條件的號碼</div>';
+    return;
+  }
+
+  let html = '';
+  orderedGroups.forEach(group => {
+    html += `
+      <div class="zodiac-item">
+        <div class="zodiac-label">${group.zodiac}</div>
+        <div class="zodiac-balls">
+          ${group.nums.map(x => `<div class="ball ${x.color}">${String(x.n).padStart(2, '0')}</div>`).join('')}
+        </div>
+      </div>
+    `;
+  });
+  resEl.innerHTML = html;
+}
+
+/* ========== 7. 清空与复制 ========== */
+document.getElementById('btnClear').addEventListener('click', () => {
+  selected.clear();
+  document.querySelectorAll('.item.on').forEach(el => el.classList.remove('on'));
+  render();
+});
+
+document.getElementById('btnCopy').addEventListener('click', () => {
+  if (selected.size === 0) { alert('請先選擇條件'); return; }
+
+  const orderedGroups = getOrderedResult();
+  if (orderedGroups.length === 0) { alert('沒有可複製的號碼'); return; }
+
+  let flatNums = [];
+  orderedGroups.forEach(g => {
+    flatNums.push(...g.nums.map(x => x.n));
+  });
+
+  // 【修改点】使用中文逗号“，”分隔
+  const text = flatNums.map(n => String(n).padStart(2, '0')).join('，');
+  const done = () => {
+    const btn = document.getElementById('btnCopy');
+    const old = btn.textContent;
+    btn.textContent = '已復製';
+    setTimeout(() => btn.textContent = old, 1200);
+  };
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+});
+
+function fallbackCopy(text, cb) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); cb(); } catch (e) { alert(text); }
+  document.body.removeChild(ta);
+}
+
+// 初始化
+render();
+</script>
+</body>
+</html>
