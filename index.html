@@ -13,7 +13,7 @@
     font-size: 14px; color: #333;
   }
   
-  /* 核心布局：使用 fixed 锁定全屏，解决手机端高度计算问题 */
+  /* 核心布局：使用 fixed 锁定全屏 */
   #app {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -30,7 +30,7 @@
     z-index: 10;
     display: flex;
     flex-direction: column;
-    max-height: 50vh; /* 最多占屏幕一半高度 */
+    max-height: 50vh; 
   }
 
   .result-box {
@@ -47,7 +47,7 @@
   }
   .title small { font-weight: 400; color: #999; font-size: 12px; }
 
-  /* 号码球容器：一行两个生肖组 */
+  /* 号码球容器 */
   .result-balls {
     display: flex;
     flex-wrap: wrap;
@@ -56,9 +56,9 @@
     min-height: 40px;
   }
 
-  /* 单个生肖组块 */
+  /* 生肖组块 */
   .zodiac-item {
-    width: calc(50% - 4px); /* 恰好占据一半，一行两个 */
+    width: calc(50% - 4px); /* 严格一行两个 */
     display: flex;
     align-items: flex-start;
     gap: 6px;
@@ -116,9 +116,15 @@
   .btn {
     flex: 1; padding: 10px; border-radius: 6px; text-align: center;
     font-weight: 700; font-size: 14px; cursor: pointer; border: none; outline: none;
+    transition: background-color 0.2s, color 0.2s;
   }
-  .btn.clear { background: #e0e0e0; color: #555; }
-  .btn.copy { background: #1db475; color: #fff; }
+  
+  /* 默认按钮颜色 */
+  .btn.clear, .btn.copy { background: #e0e0e0; color: #555; }
+  
+  /* 激活时的复制按钮颜色 */
+  .btn.copy.active { background: #1db475; color: #fff; }
+  
   .btn:active { opacity: 0.8; }
 
   /* 底部滚动区域 (挑码区) */
@@ -143,7 +149,6 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     transition: all 0.1s;
   }
-  /* 针对长文本（家禽野兽）稍微缩小字体 */
   .item.long-text { font-size: 11px; }
   
   .item.on { background: #1db475; border-color: #1db475; color: #fff; font-weight: 700; }
@@ -294,7 +299,7 @@ Object.keys(PAIR_RULES).forEach(k => {
 /* ========== 4. 渲染UI ========== */
 const LAYOUT = [
   { cols:6, keys:['鼠','牛','虎','兔','龍','蛇','馬','羊','猴','雞','狗','豬'] },
-  { cols:2, keys:['家禽(牛馬羊雞狗豬)', '野獸(兔虎鼠猴蛇龍)'] }, // 【修改点】替换到这里
+  { cols:2, keys:['家禽(牛馬羊雞狗豬)', '野獸(兔虎鼠猴蛇龍)'] },
   { cols:6, keys:['合單','大單','小單','合大','尾大','__','合雙','大雙','小雙','合小','尾小'] },
   { cols:6, keys:['金','木','水','火','土'] },
   { cols:6, keys:Object.keys(PAIR_RULES).filter(k=>k.endsWith('合')) },
@@ -328,11 +333,34 @@ LAYOUT.forEach(group => {
 });
 
 /* ========== 5. 选中与计算逻辑 ========== */
+// Set 会保持插入顺序
 const selected = new Set();
 
 function toggleRule(key, el) {
-  if (selected.has(key)) { selected.delete(key); el.classList.remove('on'); }
-  else { selected.add(key); el.classList.add('on'); }
+  const animalKeys = ['家禽(牛馬羊雞狗豬)', '野獸(兔虎鼠猴蛇龍)'];
+  
+  if (selected.has(key)) { 
+    // 如果已经选中，则取消选中
+    selected.delete(key); 
+    el.classList.remove('on'); 
+  } else { 
+    // 如果没选中，准备选中
+    if (animalKeys.includes(key)) {
+      // 单选互斥逻辑：如果选的是家禽/野兽，先清除另一个
+      const otherKey = key === '家禽(牛馬羊雞狗豬)' ? '野獸(兔虎鼠猴蛇龍)' : '家禽(牛馬羊雞狗豬)';
+      if (selected.has(otherKey)) {
+        selected.delete(otherKey);
+        document.querySelectorAll('.item').forEach(itemEl => {
+          if (itemEl.dataset.key === otherKey) {
+            itemEl.classList.remove('on');
+          }
+        });
+      }
+    }
+    // 添加当前选中
+    selected.add(key); 
+    el.classList.add('on'); 
+  }
   render();
 }
 
@@ -340,9 +368,11 @@ function getPredicate(key) {
   return RULES[key] || PAIR_RULES[key];
 }
 
-function getOrderedResult() {
+// 根据用户的选择顺序，计算最终结果
+function getResultOrder() {
   if (selected.size === 0) return [];
   
+  // 1. 计算全部符合过滤条件的号码池
   const groups = {};
   selected.forEach(key => {
     const gid = RULE_GROUPS[key] || 'other';
@@ -350,24 +380,35 @@ function getOrderedResult() {
     groups[gid].push(getPredicate(key));
   });
 
-  const result = NUMBERS.filter(x => {
+  const resultPool = NUMBERS.filter(x => {
     for (let gid in groups) {
       if (!groups[gid].some(p => p(x))) return false; 
     }
     return true;
   });
 
-  const orderedGroups = [];
-  ZODIACS.forEach(zodiac => {
-    const zodiacNums = result.filter(x => x.zodiac === zodiac).sort((a,b) => a.n - b.n);
-    if (zodiacNums.length > 0) {
-      orderedGroups.push({
-        zodiac: zodiac,
-        nums: zodiacNums
-      });
+  // 2. 判断用户选了哪些生肖（按点击顺序）
+  const chosenZodiacs = [];
+  selected.forEach(key => {
+    if (RULE_GROUPS[key] === 'zodiac') {
+      chosenZodiacs.push(key);
     }
   });
-  return orderedGroups;
+
+  // 3. 如果选了生肖，按选中的先后顺序展示；如果纯条件，按十二生肖固定顺序展示
+  const displayOrder = chosenZodiacs.length > 0 ? chosenZodiacs : ZODIACS;
+
+  // 4. 组装结果展示序列
+  const displayGroups = [];
+  displayOrder.forEach(zodiac => {
+    // 提取该生肖下，符合号码池的号码
+    const nums = resultPool.filter(x => x.zodiac === zodiac).sort((a,b) => a.n - b.n);
+    if (nums.length > 0) {
+      displayGroups.push({ label: zodiac, nums: nums });
+    }
+  });
+
+  return displayGroups;
 }
 
 /* ========== 6. 渲染结果 ========== */
@@ -381,8 +422,8 @@ function render() {
     return;
   }
 
-  const orderedGroups = getOrderedResult();
-  const totalCount = orderedGroups.reduce((acc, g) => acc + g.nums.length, 0);
+  const displayGroups = getResultOrder();
+  const totalCount = displayGroups.reduce((acc, g) => acc + g.nums.length, 0);
 
   cntEl.textContent = `共 ${totalCount} 個`;
 
@@ -392,10 +433,10 @@ function render() {
   }
 
   let html = '';
-  orderedGroups.forEach(group => {
+  displayGroups.forEach(group => {
     html += `
       <div class="zodiac-item">
-        <div class="zodiac-label">${group.zodiac}</div>
+        <div class="zodiac-label">${group.label}</div>
         <div class="zodiac-balls">
           ${group.nums.map(x => `<div class="ball ${x.color}">${String(x.n).padStart(2, '0')}</div>`).join('')}
         </div>
@@ -415,21 +456,26 @@ document.getElementById('btnClear').addEventListener('click', () => {
 document.getElementById('btnCopy').addEventListener('click', () => {
   if (selected.size === 0) { alert('請先選擇條件'); return; }
 
-  const orderedGroups = getOrderedResult();
-  if (orderedGroups.length === 0) { alert('沒有可複製的號碼'); return; }
+  const displayGroups = getResultOrder();
+  if (displayGroups.length === 0) { alert('沒有可複製的號碼'); return; }
 
   let flatNums = [];
-  orderedGroups.forEach(g => {
+  displayGroups.forEach(g => {
     flatNums.push(...g.nums.map(x => x.n));
   });
 
-  // 使用中文逗号“，”分隔
   const text = flatNums.map(n => String(n).padStart(2, '0')).join('，');
+  
+  const btn = document.getElementById('btnCopy');
+  
   const done = () => {
-    const btn = document.getElementById('btnCopy');
-    const old = btn.textContent;
+    btn.classList.add('active');
     btn.textContent = '已復製';
-    setTimeout(() => btn.textContent = old, 1200);
+    
+    setTimeout(() => {
+      btn.classList.remove('active');
+      btn.textContent = '復製';
+    }, 1200);
   };
 
   if (navigator.clipboard && window.isSecureContext) {
